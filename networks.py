@@ -16,12 +16,12 @@ class f3(nn.Module):
         return self.linear(z)
 
 class DQN(nn.Module):
-    def __init__(self, env):
+    def __init__(self, observation_space_shape, action_space_shape):
         super(DQN, self).__init__()
         self.layers = nn.Sequential(
-            nn.Linear(63, 512),
+            nn.Linear(observation_space_shape, 512),
             nn.ReLU(),
-            nn.Linear(512, env.action_space.n)
+            nn.Linear(512, action_space_shape)
         )
         
     def forward(self, x):
