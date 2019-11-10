@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-class ReplayBuffer():
+class ReplayBuffer:
     def __init__(self, size):
         """Create Replay buffer.
         Parameters
