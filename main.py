@@ -92,6 +92,8 @@ def train(env, agent):
     episode_rewards = []
     for episode in range(MAX_EPISODES):
         state = env.reset()
+        goal, goal_program = env.sample_goal()
+        env.set_goal(goal, goal_program)
         episode_reward = 0
         max_steps = len(agent.replay_buffer)
 
