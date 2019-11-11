@@ -17,26 +17,28 @@ class ReplayBuffer:
     def __len__(self):
         return len(self._storage)
 
-    def add(self, obs_t, action, reward, obs_tp1, done):
-        data = (obs_t, action, reward, obs_tp1, done)
+    def add(self, transition):
+        # transition = (current_state, action, goal, reward, next_state, satisfied_goals_t)
 
         if self._next_idx >= len(self._storage):
-            self._storage.append(data)
+            self._storage.append(transition)
         else:
-            self._storage[self._next_idx] = data
+            self._storage[self._next_idx] = transition
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
-    def _encode_sample(self, idxes):
-        obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
-        for i in idxes:
-            data = self._storage[i]
-            obs_t, action, reward, obs_tp1, done = data
-            obses_t.append(np.array(obs_t, copy=False))
-            actions.append(np.array(action, copy=False))
-            rewards.append(reward)
-            obses_tp1.append(np.array(obs_tp1, copy=False))
-            dones.append(done)
-        return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
+    def _encode_sample(self, batch_size):
+        state_t, actions, goals, rewards, state_tp1, satisfied_goals = [], [], [], [], [], []
+        for i in batch_size:
+            t = self._storage[i]
+
+            state_t.append(np.array(t.current_state, copy=False))
+            actions.append(np.array(t.action, copy=False))
+            goals.append(np.array(t.goal, copy=False))
+            rewards.append(t.reward)
+            state_tp1.append(np.array(t.next_state, copy=False))
+            satisfied_goals.append(t.satisfied_goals_t)
+
+        return np.array(state_t), np.array(actions), np.array(goals), np.array(rewards), np.array(state_tp1), np.array(satisfied_goals)
 
     def sample(self, batch_size):
         """Sample a batch of experiences.
