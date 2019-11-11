@@ -8,13 +8,15 @@ import torch.autograd as autograd
 
 import argparse
 
+import sys, os.path
+sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'))
+sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..','clevr_robot_env'))
 from clevr_robot_env import ClevrEnv
-import sys
-import sys.path.append("../clevr_env_robot")
-from networks import DQN
+from networks import DQN, Encoder
 from replay_buffer import ReplayBuffer
 
-MAX_EPISODES = 5000
+MAX_EPISODES = 50
+REPLAY_BUFFER_SIZE = 100 
 
 class DoubleDQN:
     def __init__(self, env, replay_buffer, tau=0.01, gamma=0.99, epsilon=0.9):
@@ -22,9 +24,14 @@ class DoubleDQN:
         self.tau = tau
         self.gamma = gamma
         self.epsilon = epsilon
+        self.embedding_size = 64
+        self.hidden_size = 64
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DQN(observation_space_shape, action_space_shape).to(self.device)
-        self.target_model = DQN(observation_space_shape, action_space_shape).to(self.device)
+        self.obs_shape = self.env.get_obs().shape
+        self.action_shape = 40
+        self.model = DQN(self.obs_shape, self.action_shape).to(self.device)
+        self.target_model = DQN(self.obs_shape, self.action_shape).to(self.device)
+        self.encoder = Encoder(self.embedding_size, self.hidden_size)
         self.replay_buffer = replay_buffer
 
         # hard copy model parameters to target model parameters
@@ -81,20 +88,42 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default="train", help="[test|train]")
 args = parser.parse_args()
 
-env = ClevrEnv()
+def train(env, agent):
+    episode_rewards = []
+    for episode in range(MAX_EPISODES):
+        state = env.reset()
+        episode_reward = 0
+        max_steps = len(agent.replay_buffer)
 
-def train():
-    # for episode in range(MAX_EPISODES):
-    #     print("training episode: ", episode)
+        for step in range(max_steps):
+            action = agent.get_action(state)
+            next_state, reward, done, _ = env.step(action)
+            agent.replay_buffer.push(state, action, reward, next_state, done)
+            episode_reward += reward
+
+            if len(agent.replay_buffer) > batch_size:
+                agent.update(batch_size)   
+
+            if done or step == max_steps-1:
+                episode_rewards.append(episode_reward)
+                print("Episode " + str(episode) + ": reward " + str(episode_reward))
+                break
+
+            state = next_state
+    return episode_rewards
+
+def test(env, agent):
     pass
 
-
-
 def main():
+    env = ClevrEnv(action_type="perfect", obs_type='order_invariant', direct_obs=True)
+    replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
+    agent = DoubleDQN(env, replay_buffer)
+
     if args.mode == "train":
-        train()
+        train(env, agent)
     else:
-        test()
+        test(env, agent)
 
 if __name__ == "__main__":
     main()
