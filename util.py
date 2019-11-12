@@ -5,7 +5,7 @@ from replay_buffer import ReplayBuffer
 import networks
 from random import randint
 
-def get_state_based_representation(observation, instruction):
+def get_state_based_representation(observation, instruction, f1, f2):
     Z_matrix = get_Z_matrix(f1, observation)
     ghat = f2(instruction)
     w_matrix = get_w_matrix(Z_matrix, ghat)
@@ -66,7 +66,7 @@ def get_zhat_matrix(observation, ghat, Z_matrix, p_matrix):
 
     new_matrix = []
     for o in observation:
-        row = torch.cat([torch.from_numpy(o).float(), ghat, zvalue],0)
+        row = torch.cat([torch.from_numpy(o).float(), ghat, z_value],0)
         new_matrix.append(row)
 
     return torch.stack(new_matrix, 0)

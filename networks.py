@@ -3,6 +3,7 @@ import torch.nn as nn
 import random
 import numpy as np
 from scipy.special import softmax
+from util import *
 
 class f1(nn.Module):
     def __init__(self, input_sz, output_sz):
@@ -58,13 +59,11 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.obs_shape = obs_shape
         self.action_shape = action_shape
-        self.embedding_size = 64
-        self.hidden_size = 64
-        print(obs_shape)
-        print(action_shape)
+        self.embedding_size = 50
+        self.hidden_size = 50
         self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size)
         self.encoder = Encoder(self.embedding_size, self.hidden_size)
-        f3_input_shape = obs_shape[0] * (obs_shape[1] + self.hidden_size + obs_shape[0])
+        f3_input_shape = obs_shape[0] * (obs_shape[1] + self.hidden_size * 2)
         self.f3 = nn.Sequential(
             nn.Linear(f3_input_shape, 512),
             nn.ReLU(),
@@ -73,15 +72,8 @@ class DQN(nn.Module):
         self.softmax = nn.Softmax(dim=0)
         
     def forward(self, obs, g):
-        g_tilde = self.encoder(g)
-        O = np.asarray([[a, b] for a in obs for b in obs])
-        fO = [self.f1(torch.Tensor(np.concatenate(o))) for o in O]
-        Z = [torch.dot(t, g_tilde) for t in fO]
-        p = torch.reshape(self.softmax(torch.stack(Z)), (obs.shape[0], -1))
-        g = torch.stack([g_tilde] * obs.shape[0])
-        o = torch.Tensor(obs)
-        x = torch.cat((o, g, p), 1)
-        return self.f3(x.reshape(-1))
+        zhat = get_state_based_representation(obs, g, self.f1, self.encoder)
+        return self.f3(zhat.reshape(-1))
     
     def act(self, state, goal):
         # state   = torch.Variable(torch.FloatTensor(state), volatile=True)
