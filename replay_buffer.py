@@ -17,8 +17,11 @@ class ReplayBuffer:
     def __len__(self):
         return len(self._storage)
 
+    def max_size(self):
+        return self._maxsize
+
     def add(self, transition):
-        # transition = (current_state, action, goal, reward, next_state, satisfied_goals_t)
+        # transition = (current_state, action, goal, reward, next_state, satisfied_goals_t, done)
 
         if self._next_idx >= len(self._storage):
             self._storage.append(transition)
@@ -27,7 +30,7 @@ class ReplayBuffer:
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
     def _encode_sample(self, batch_size):
-        state_t, actions, goals, rewards, state_tp1, satisfied_goals = [], [], [], [], [], []
+        state_t, actions, goals, rewards, state_tp1, satisfied_goals, dones = [], [], [], [], [], [], []
         for i in batch_size:
             t = self._storage[i]
 
@@ -37,8 +40,10 @@ class ReplayBuffer:
             rewards.append(t.reward)
             state_tp1.append(np.array(t.next_state, copy=False))
             satisfied_goals.append(t.satisfied_goals_t)
+            dones.append(t.done)
 
-        return np.array(state_t), np.array(actions), np.array(goals), np.array(rewards), np.array(state_tp1), np.array(satisfied_goals)
+        return np.array(state_t), np.array(actions), np.array(goals), np.array(rewards), 
+        np.array(state_tp1), np.array(satisfied_goals), np.array(dones)
 
     def sample(self, batch_size):
         """Sample a batch of experiences.

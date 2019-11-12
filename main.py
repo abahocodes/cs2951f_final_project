@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd as autograd
+import numpy as np
 
 import argparse
 
@@ -14,9 +15,11 @@ sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..','c
 from clevr_robot_env import ClevrEnv
 from networks import DQN, Encoder
 from replay_buffer import ReplayBuffer
+from transition import Transition
 
 MAX_EPISODES = 50
 REPLAY_BUFFER_SIZE = 100 
+BATCH_SIZE = 30
 
 class DoubleDQN:
     def __init__(self, env, replay_buffer, tau=0.01, gamma=0.99, epsilon=0.9):
@@ -40,17 +43,21 @@ class DoubleDQN:
 
         self.optimizer = torch.optim.Adam(self.model.parameters())
 
-    def get_action(self, state):
-        state = torch.FloatTensor(state).float().unsqueeze(0).to(self.device)
-        qvals = self.model.forward(state)
-        action = np.argmax(qvals.cpu().detach().numpy())
-        
+    def get_action(self, state, goal):
+        # state = torch.FloatTensor(state).float().unsqueeze(0).to(self.device)
         if(np.random.randn() < self.epsilon):
-            return self.env.action_space.sample()
-        return action
+            qvals = self.model.forward(state, goal)
+            idx = torch.argmax(qvals).detach().numpy()
+        else:
+            idx = self.env.action_space.sample()
+        directions = (self.action_shape / self.obs_shape[0]) 
+        obj_selection = idx / directions
+        direction_selection = idx % directions
+        return int(obj_selection), int(direction_selection)
+        
     
     def compute_loss(self, batch):     
-        states, actions, rewards, next_states, dones = batch
+        states, actions, rewards, next_states, _, dones = batch
         states = torch.FloatTensor(states).to(self.device)
         actions = torch.LongTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
@@ -93,18 +100,24 @@ def train(env, agent):
     for episode in range(MAX_EPISODES):
         state = env.reset()
         goal, goal_program = env.sample_goal()
+        print("running episode: ", episode)
+        print("episode goal: ", goal)
         env.set_goal(goal, goal_program)
         episode_reward = 0
-        max_steps = len(agent.replay_buffer)
+        max_steps = agent.replay_buffer.max_size()
 
         for step in range(max_steps):
-            action = agent.get_action(state)
-            next_state, reward, done, _ = env.step(action)
-            agent.replay_buffer.push(state, action, reward, next_state, done)
+            action = agent.get_action(state, goal)
+            print("choosing action: ", action)
+            next_state, reward, done, _ = env.step(action, record_achieved_goal=True)
+            achieved_goals = env.get_achieved_goals()
+            print("num achieved goals: ", len(achieved_goals))
+            transition = Transition(state, action, goal, reward, next_state, achieved_goals, done)
+            agent.replay_buffer.add(transition)
             episode_reward += reward
 
-            if len(agent.replay_buffer) > batch_size:
-                agent.update(batch_size)   
+            if len(agent.replay_buffer) > BATCH_SIZE:
+                agent.update(BATCH_SIZE)   
 
             if done or step == max_steps-1:
                 episode_rewards.append(episode_reward)
@@ -112,6 +125,7 @@ def train(env, agent):
                 break
 
             state = next_state
+        print("completed episode: ", episode)
     return episode_rewards
 
 def test(env, agent):

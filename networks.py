@@ -1,5 +1,7 @@
+import torch
 import torch.nn as nn
 import random
+import numpy as np
 from scipy.special import softmax
 
 class f1(nn.Module):
@@ -36,7 +38,7 @@ class Encoder(nn.Module):
 
     def forward(self, q):
         tokens = self.get_tokens(q)
-        ids = self.token_to_id(tokens)
+        ids = self.tokens_to_id(tokens)
 
         embeddings = self.embedding(ids)
         outputs, _ = self.gru(embeddings.unsqueeze(1))
@@ -62,25 +64,27 @@ class DQN(nn.Module):
         print(action_shape)
         self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size)
         self.encoder = Encoder(self.embedding_size, self.hidden_size)
-        f3_input_shape = obs_shape[0] * (obs_shape[1] + self.hidden_size + 1)
+        f3_input_shape = obs_shape[0] * (obs_shape[1] + self.hidden_size + obs_shape[0])
         self.f3 = nn.Sequential(
             nn.Linear(f3_input_shape, 512),
             nn.ReLU(),
             nn.Linear(512, self.action_shape)
         )
+        self.softmax = nn.Softmax(dim=0)
         
     def forward(self, obs, g):
         g_tilde = self.encoder(g)
-        O = [(a, b) for a in obs for b in obs]
-        O = np.apply_along_axis(lambda o : self.f1(np.concatenate(o)), O).reshape(self.obs_shape[0], self.obs_shape[0], -1)
-        Z = np.sum(g_tilde * O)
-        p = softmax(Z)
-        print("p matrix shape: ", p.shape)
-        print("O matrix shape: ", O.shape)
-        return self.layers(x)
+        O = np.asarray([[a, b] for a in obs for b in obs])
+        fO = [self.f1(torch.Tensor(np.concatenate(o))) for o in O]
+        Z = [torch.dot(t, g_tilde) for t in fO]
+        p = torch.reshape(self.softmax(torch.stack(Z)), (obs.shape[0], -1))
+        g = torch.stack([g_tilde] * obs.shape[0])
+        o = torch.Tensor(obs)
+        x = torch.cat((o, g, p), 1)
+        return self.f3(x.reshape(-1))
     
-    def act(self, state, instruction):
-        state   = torch.Variable(torch.FloatTensor(state), volatile=True)
-        q_value = self.forward(state)
+    def act(self, state, goal):
+        # state   = torch.Variable(torch.FloatTensor(state), volatile=True)
+        q_value = self.forward(state, goal)
         action  = torch.argmax(q_value)
         return action
