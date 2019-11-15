@@ -8,5 +8,12 @@ class Transition:
         self.satisfied_goals_t = satisfied_goals_t
         self.done = done
         
+    def __str__(self):
+        p = ''
+        p += 'Current State:\t' + str(self.current_state) + '\n'
+        p += 'Action :\t' + str(self.action) + '\n'
+        p += 'Goal :\t' + str(self.goal) + '\n'
+        p += 'Next State: ' + str(self.next_state)
+        return p
     
 
