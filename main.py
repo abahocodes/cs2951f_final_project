@@ -45,8 +45,8 @@ class DoubleDQN:
     def get_action(self, state, goal):
         # state = torch.FloatTensor(state).float().unsqueeze(0).to(self.device)
         if(np.random.randn() < self.epsilon):
-            qvals = self.model.forward(state, goal)
-            idx = torch.argmax(qvals).detach().numpy()
+            q_values = self.model.forward(state, goal)
+            idx = torch.argmax(q_values).detach().numpy()
         else:
             idx = self.env.action_space.sample()
         directions = (self.action_shape / self.obs_shape[0]) 
