@@ -77,9 +77,11 @@ def get_zhat_matrix(observation, ghat, Z_matrix, p_matrix):
     return torch.stack([torch.stack(batch) for batch in state_rep])
 
 def relabel_future_instructions(trajectory, t, k, discount_factor):
-    delta_list = []
 
     t_size = len(trajectory)
+    if t_size == t:
+        return []  # no future transitions
+    delta_list = []
 
     for i in range(k):
         future = randint(t+1, t_size-1)
