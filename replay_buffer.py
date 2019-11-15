@@ -42,8 +42,7 @@ class ReplayBuffer:
             satisfied_goals.append(t.satisfied_goals_t)
             dones.append(t.done)
 
-        return np.array(state_t), np.array(actions), np.array(goals), np.array(rewards), 
-        np.array(state_tp1), np.array(satisfied_goals), np.array(dones)
+        return np.array(state_t), np.array(actions), np.array(goals), np.array(rewards), np.array(state_tp1), np.array(satisfied_goals), np.array(dones)
 
     def sample(self, batch_size):
         """Sample a batch of experiences.

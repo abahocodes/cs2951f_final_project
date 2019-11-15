@@ -28,8 +28,8 @@ class DoubleDQN:
         self.tau = tau
         self.gamma = gamma
         self.epsilon = epsilon
-        self.embedding_size = 64
-        self.hidden_size = 64
+        self.embedding_size = 50
+        self.hidden_size = 50
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.obs_shape = self.env.get_obs().shape
         self.action_shape = 40 // 5
@@ -59,30 +59,29 @@ class DoubleDQN:
         
     
     def compute_loss(self, batch):     
-        states, actions, rewards, next_states, _, dones = batch
-        states = torch.FloatTensor(states).to(self.device)
-        actions = torch.LongTensor(actions).to(self.device)
+        states, actions, goals, rewards, next_states, satisfied_goals, dones = batch
+
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.FloatTensor(next_states).to(self.device)
-        dones = torch.FloatTensor(dones)
+        dones = torch.FloatTensor(dones).to(self.device)
 
-        # resize tensors
-        actions = actions.view(actions.size(0))
-        dones = dones.view(dones.size(0))
+        curr_Q = self.model.forward(states, goals) 
 
-        # compute loss
-        curr_Q = self.model.forward(states).gather(1, actions.view(actions.size(0), 1))
-        next_Q = self.target_model.forward(next_states)
-        max_next_Q = torch.max(next_Q, 1)[0]
-        max_next_Q = max_next_Q.view(max_next_Q.size(0), 1)
-        expected_Q = rewards + (1 - dones) * self.gamma * max_next_Q
+        curr_Q_prev_actions = [curr_Q[batch, actions[batch][0], actions[batch][1]] for batch in range(len(states))] # TODO: Use pytorch gather
+        curr_Q_prev_actions = torch.stack(curr_Q_prev_actions)
 
-        loss = F.mse_loss(curr_Q, expected_Q.detach())
+        next_Q = self.target_model.forward(next_states, goals) 
+        
+        next_Q_max_actions = torch.max(next_Q, -1).values
+        next_Q_max_actions = torch.max(next_Q_max_actions, -1).values
+
+        next_Q_max_actions = rewards + (1 - dones) * self.gamma * next_Q_max_actions
+
+        loss = F.mse_loss(curr_Q_prev_actions, next_Q_max_actions.detach())
 
         return loss
 
     def update(self, replay_buffer, batch_size):
-        batch = replay_buffer.sample(batch_size)
+        batch = replay_buffer.sample(batch_size) # 4
         loss = self.compute_loss(batch)
 
         self.optimizer.zero_grad()
@@ -112,10 +111,10 @@ def train(env, agent):
 
         for step in range(max_steps):
             action = agent.get_action(state, goal)
-            print("choosing action: ", action)
+            #print("choosing action: ", action)
             next_state, reward, done, _ = env.step(action, record_achieved_goal=True)
             achieved_goals = env.get_achieved_goals()
-            print("num achieved goals: ", len(achieved_goals))
+            #print("num achieved goals: ", len(achieved_goals))
             transition = Transition(state, action, goal, reward, next_state, achieved_goals, done)
             trajectory.append(transition)
             episode_reward += reward
@@ -129,20 +128,20 @@ def train(env, agent):
                 break
 
             state = next_state
-
+        
         for step in range(len(trajectory)): # T == length of trajectory?
             replay_buffer.add(trajectory[step])
-            print("just finished adding all transitions")
+            #print("just finished adding all transitions")
             for goal_prime in trajectory[step].satisfied_goals_t:
                 transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, 1, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
                 replay_buffer.add(transition)
-            print("just finished adding all achieved goals")
-            deltas = relabel_future_instructions(trajectory, step, 4, 30)
+            #print("just finished adding all achieved goals")
+            deltas = relabel_future_instructions(trajectory, step, 4, 0.9)
             for delta in deltas:
                 goal_prime, reward_prime = delta
                 transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
                 replay_buffer.add(transition)    
-            print("just finished adding all deltas")
+            #print("just finished adding all deltas")
 
         agent.update(replay_buffer, BATCH_SIZE)   
         print("completed episode: ", episode)

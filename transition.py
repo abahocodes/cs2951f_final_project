@@ -11,9 +11,10 @@ class Transition:
     def __str__(self):
         p = ''
         p += 'Current State:\t' + str(self.current_state) + '\n'
-        p += 'Action :\t' + str(self.action) + '\n'
-        p += 'Goal :\t' + str(self.goal) + '\n'
-        p += 'Next State: ' + str(self.next_state)
+        p += 'Action:\t' + str(self.action) + '\n'
+        p += 'Goal:\t' + str(self.goal) + '\n'
+        p += 'Next State:\t' + str(self.next_state) + '\n'
+        p += 'Satisfied goals:\t' + str(len(self.satisfied_goals_t))
         return p
     
 

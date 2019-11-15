@@ -5,14 +5,19 @@ from replay_buffer import ReplayBuffer
 import networks
 from random import randint
 
-def get_state_based_representation(observation, instruction, f1, f2):
-
+def get_state_based_representation(observation, instruction, f1_model, f2):
+    
     if len(observation.shape) == 2:
         observation = np.expand_dims(observation, 0)
 
     observation = torch.Tensor(observation)
-    Z_matrix = get_Z_matrix(f1, observation)
+    Z_matrix = get_Z_matrix(f1_model, observation)
     ghat = f2(instruction)
+
+    # Check for batch
+    if len(ghat.shape) == 1:
+        ghat = ghat.unsqueeze(0)
+
     w_matrix = get_w_matrix(Z_matrix, ghat)
     p_matrix = get_p_matrix(w_matrix)
     zhat = get_zhat_matrix(observation, ghat, Z_matrix, p_matrix)
@@ -35,7 +40,7 @@ def get_w_matrix(Z_matrix, ghat):
     for i in range(len(w_matrix)):
         for j in range(len(w_matrix[0])):
             for k in range(len(w_matrix[0][0])):
-                w_matrix[i][j][k] = Z_matrix[i][j][k] @ ghat
+                w_matrix[i][j][k] = Z_matrix[i][j][k] @ ghat[i]
     return w_matrix
 
 def softmax(w_matrix):
@@ -72,18 +77,18 @@ def get_zhat_matrix(observation, ghat, Z_matrix, p_matrix):
     for i in range(observation.shape[0]): # i
         for j in range(observation.shape[1]): # j
             current_o = observation[i, j, :]
-            state_rep[i][j] = torch.cat([current_o, ghat, zhat[i]],0)
+            state_rep[i][j] = torch.cat([current_o, ghat[i], zhat[i]],0)
 
     return torch.stack([torch.stack(batch) for batch in state_rep])
 
 def relabel_future_instructions(trajectory, t, k, discount_factor):
-
+    
     t_size = len(trajectory)
-    if t_size == t:
+    if t_size == t + 1:
         return []  # no future transitions
     delta_list = []
 
-    for i in range(k):
+    for _ in range(k):
         future = randint(t+1, t_size-1)
         transition = trajectory[future]
         if len(transition.satisfied_goals_t) > 0:
@@ -91,7 +96,7 @@ def relabel_future_instructions(trajectory, t, k, discount_factor):
             goal_prime = transition.satisfied_goals_t[random_index]
             reward_prime = transition.reward * pow(discount_factor, future-t)
             delta_list.append([goal_prime, reward_prime])
-    
+
     return delta_list
 
         

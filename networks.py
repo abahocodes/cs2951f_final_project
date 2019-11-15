@@ -38,6 +38,9 @@ class Encoder(nn.Module):
         return torch.LongTensor(ids)
 
     def forward(self, q):
+        if isinstance(q,np.ndarray):
+            return self._forward_batch(q)
+
         tokens = self.get_tokens(q)
         ids = self.tokens_to_id(tokens)
 
@@ -45,6 +48,21 @@ class Encoder(nn.Module):
         outputs, _ = self.gru(embeddings.unsqueeze(1))
 
         return outputs[-1].squeeze(0)
+    
+    def _forward_batch(self, q): # Batch of questions
+        
+        tokens = [self.get_tokens(q[i]) for i in range(len(q))]
+
+        ids = [self.tokens_to_id(tokens[i]) for i in range(len(q))]
+
+        embeddings = [self.embedding(id_) for id_ in ids]
+    
+        outputs = [self.gru(embedings.unsqueeze(0))[0] for embedings in embeddings]
+        outputs = [output[0][-1] for output in outputs]
+
+        return torch.stack(outputs)
+
+
 
 class DQN(nn.Module):
     def __init__(self, obs_shape, action_shape):
