@@ -19,7 +19,7 @@ from transition import Transition
 from util import relabel_future_instructions
 
 MAX_EPISODES = 50
-REPLAY_BUFFER_SIZE = 100 
+REPLAY_BUFFER_SIZE = 100
 BATCH_SIZE = 30
 
 class DoubleDQN:
@@ -32,7 +32,7 @@ class DoubleDQN:
         self.hidden_size = 64
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.obs_shape = self.env.get_obs().shape
-        self.action_shape = 40
+        self.action_shape = 40 // 5
         self.model = DQN(self.obs_shape, self.action_shape).to(self.device)
         self.target_model = DQN(self.obs_shape, self.action_shape).to(self.device)
         self.encoder = Encoder(self.embedding_size, self.hidden_size)
@@ -44,15 +44,17 @@ class DoubleDQN:
         self.optimizer = torch.optim.Adam(self.model.parameters())
 
     def get_action(self, state, goal):
-        # state = torch.FloatTensor(state).float().unsqueeze(0).to(self.device)
+        assert len(state.shape) == 2 # This function should not be called during update
+
         if(np.random.randn() < self.epsilon):
             q_values = self.model.forward(state, goal)
             idx = torch.argmax(q_values).detach().numpy()
         else:
             idx = self.env.action_space.sample()
-        directions = (self.action_shape / self.obs_shape[0]) 
-        obj_selection = idx / directions
-        direction_selection = idx % directions
+
+        obj_selection = idx // 8
+        direction_selection = idx % 8
+
         return int(obj_selection), int(direction_selection)
         
     
