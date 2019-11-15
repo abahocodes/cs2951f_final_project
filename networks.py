@@ -46,14 +46,6 @@ class Encoder(nn.Module):
 
         return outputs[-1].squeeze(0)
 
-# class f3(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.linear = nn.Linear(63,800)
-
-#     def forward(self, z):
-#         return self.linear(z)
-
 class DQN(nn.Module):
     def __init__(self, obs_shape, action_shape):
         super(DQN, self).__init__()
@@ -63,20 +55,18 @@ class DQN(nn.Module):
         self.hidden_size = 50
         self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size)
         self.encoder = Encoder(self.embedding_size, self.hidden_size)
-        f3_input_shape = obs_shape[0] * (obs_shape[1] + self.hidden_size * 2)
+        f3_input_shape = obs_shape[1] + self.hidden_size + 5
         self.f3 = nn.Sequential(
             nn.Linear(f3_input_shape, 512),
             nn.ReLU(),
             nn.Linear(512, self.action_shape)
         )
-        self.softmax = nn.Softmax(dim=0)
         
     def forward(self, obs, g):
         zhat = get_state_based_representation(obs, g, self.f1, self.encoder)
-        return self.f3(zhat.reshape(-1))
+        return self.f3(zhat)
     
     def act(self, state, goal):
-        # state   = torch.Variable(torch.FloatTensor(state), volatile=True)
         q_value = self.forward(state, goal)
         action  = torch.argmax(q_value)
         return action
