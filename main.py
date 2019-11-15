@@ -16,7 +16,7 @@ from clevr_robot_env import ClevrEnv
 from networks import DQN, Encoder
 from replay_buffer import ReplayBuffer
 from transition import Transition
-from utils import relabel_future_instructions
+from util import relabel_future_instructions
 
 MAX_EPISODES = 50
 REPLAY_BUFFER_SIZE = 100 
