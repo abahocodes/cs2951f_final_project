@@ -22,7 +22,7 @@ REPLAY_BUFFER_SIZE = 100
 BATCH_SIZE = 30
 
 class DoubleDQN:
-    def __init__(self, env, replay_buffer, tau=0.01, gamma=0.99, epsilon=0.9):
+    def __init__(self, env, tau=0.01, gamma=0.99, epsilon=0.9):
         self.env = env
         self.tau = tau
         self.gamma = gamma
@@ -35,7 +35,6 @@ class DoubleDQN:
         self.model = DQN(self.obs_shape, self.action_shape).to(self.device)
         self.target_model = DQN(self.obs_shape, self.action_shape).to(self.device)
         self.encoder = Encoder(self.embedding_size, self.hidden_size)
-        self.replay_buffer = replay_buffer
 
         # hard copy model parameters to target model parameters
         for target_param, param in zip(self.model.parameters(), self.target_model.parameters()):
@@ -79,8 +78,8 @@ class DoubleDQN:
 
         return loss
 
-    def update(self, batch_size):
-        batch = self.replay_buffer.sample(batch_size)
+    def update(self, replay_buffer, batch_size):
+        batch = replay_buffer.sample(batch_size)
         loss = self.compute_loss(batch)
 
         self.optimizer.zero_grad()
@@ -97,6 +96,7 @@ args = parser.parse_args()
 
 def train(env, agent):
     episode_rewards = []
+    replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
     for episode in range(MAX_EPISODES):
         state = env.reset()
         goal, goal_program = env.sample_goal()
@@ -104,7 +104,8 @@ def train(env, agent):
         print("episode goal: ", goal)
         env.set_goal(goal, goal_program)
         episode_reward = 0
-        max_steps = agent.replay_buffer.max_size()
+        max_steps = replay_buffer.max_size()
+        trajectory = []
 
         for step in range(max_steps):
             action = agent.get_action(state, goal)
@@ -113,11 +114,11 @@ def train(env, agent):
             achieved_goals = env.get_achieved_goals()
             print("num achieved goals: ", len(achieved_goals))
             transition = Transition(state, action, goal, reward, next_state, achieved_goals, done)
-            agent.replay_buffer.add(transition)
+            trajectory.append(transition)
             episode_reward += reward
 
-            if len(agent.replay_buffer) > BATCH_SIZE:
-                agent.update(BATCH_SIZE)   
+            # if len(agent.replay_buffer) > BATCH_SIZE:
+            #     agent.update(BATCH_SIZE)   
 
             if done or step == max_steps-1:
                 episode_rewards.append(episode_reward)
@@ -125,6 +126,22 @@ def train(env, agent):
                 break
 
             state = next_state
+
+        for step in range(len(trajectory)): # T == length of trajectory?
+            replay_buffer.add(trajectory[step])
+            print("just finished adding all transitions")
+            for goal_prime in trajectory[step].satisfied_goals_t:
+                transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, 1, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
+                replay_buffer.add(transition)
+            print("just finished adding all achieved goals")
+            deltas = relabel_future_instructions(trajectory, step, 4, 30)
+            for delta in deltas:
+                goal_prime, reward_prime = delta
+                transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
+                replay_buffer.add(transition)    
+            print("just finished adding all deltas")
+
+        agent.update(replay_buffer, BATCH_SIZE)   
         print("completed episode: ", episode)
     return episode_rewards
 
@@ -133,8 +150,8 @@ def test(env, agent):
 
 def main():
     env = ClevrEnv(action_type="perfect", obs_type='order_invariant', direct_obs=True)
-    replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
-    agent = DoubleDQN(env, replay_buffer)
+    # replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
+    agent = DoubleDQN(env)
 
     if args.mode == "train":
         train(env, agent)
