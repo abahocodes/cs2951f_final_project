@@ -5,12 +5,14 @@ from replay_buffer import ReplayBuffer
 import networks
 from random import randint
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def get_state_based_representation(observation, instruction, f1_model, f2):
-    
+
     if len(observation.shape) == 2:
         observation = np.expand_dims(observation, 0)
 
-    observation = torch.Tensor(observation)
+    observation = torch.Tensor(observation).to(DEVICE)
     Z_matrix = get_Z_matrix(f1_model, observation)
     ghat = f2(instruction)
 
@@ -30,6 +32,7 @@ def get_Z_matrix(f1_model, observation):
         for j in range(observation.shape[1]):
             for k in range(observation.shape[1]):
                 pair = torch.cat((observation[i, j, :], observation[i, k, :]), 0)
+                pair = pair.to(DEVICE)
                 value = f1_model(pair)
                 Z_matrix[i][j][k] = value
 

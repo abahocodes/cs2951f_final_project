@@ -5,6 +5,8 @@ import numpy as np
 from scipy.special import softmax
 from util import *
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class f1(nn.Module):
     def __init__(self, input_sz, output_sz):
         super().__init__()
@@ -35,7 +37,7 @@ class Encoder(nn.Module):
 
     def tokens_to_id(self, tokens):
         ids = [self.vocab[t.lower()] for t in tokens]
-        return torch.LongTensor(ids)
+        return torch.LongTensor(ids).to(DEVICE)
 
     def forward(self, q):
         if isinstance(q,np.ndarray):
@@ -71,14 +73,14 @@ class DQN(nn.Module):
         self.action_shape = action_shape
         self.embedding_size = 50
         self.hidden_size = 50
-        self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size)
-        self.encoder = Encoder(self.embedding_size, self.hidden_size)
+        self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size).to(DEVICE)
+        self.encoder = Encoder(self.embedding_size, self.hidden_size).to(DEVICE)
         f3_input_shape = obs_shape[1] + self.hidden_size + 5
         self.f3 = nn.Sequential(
             nn.Linear(f3_input_shape, 512),
             nn.ReLU(),
             nn.Linear(512, self.action_shape)
-        )
+        ).to(DEVICE)
         
     def forward(self, obs, g):
         zhat = get_state_based_representation(obs, g, self.f1, self.encoder)

@@ -19,7 +19,9 @@ from transition import Transition
 from util import relabel_future_instructions
 
 import logging
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.ERROR)
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 REPLAY_BUFFER_SIZE = 2e6
 BATCH_SIZE = 32
@@ -36,12 +38,10 @@ class DoubleDQN:
         self.epsilon = epsilon
         self.embedding_size = 50
         self.hidden_size = 50
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.obs_shape = self.env.get_obs().shape
         self.action_shape = 40 // 5
-        self.model = DQN(self.obs_shape, self.action_shape).to(self.device)
-        self.target_model = DQN(self.obs_shape, self.action_shape).to(self.device)
-        self.encoder = Encoder(self.embedding_size, self.hidden_size)
+        self.model = DQN(self.obs_shape, self.action_shape).to(DEVICE)
+        self.target_model = DQN(self.obs_shape, self.action_shape).to(DEVICE)
 
         # hard copy model parameters to target model parameters
         for target_param, param in zip(self.model.parameters(), self.target_model.parameters()):
@@ -54,7 +54,7 @@ class DoubleDQN:
 
         if(np.random.randn() < self.epsilon):
             q_values = self.model.forward(state, goal)
-            idx = torch.argmax(q_values).detach().numpy()
+            idx = torch.argmax(q_values).detach()
         else:
             idx = self.env.action_space.sample()
 
@@ -67,8 +67,8 @@ class DoubleDQN:
     def compute_loss(self, batch):     
         states, actions, goals, rewards, next_states, satisfied_goals, dones = batch
 
-        rewards = torch.FloatTensor(rewards).to(self.device)
-        dones = torch.FloatTensor(dones).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(DEVICE)
+        dones = torch.FloatTensor(dones).to(DEVICE)
 
         curr_Q = self.model.forward(states, goals) 
 
