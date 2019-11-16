@@ -83,8 +83,3 @@ class DQN(nn.Module):
     def forward(self, obs, g):
         zhat = get_state_based_representation(obs, g, self.f1, self.encoder)
         return self.f3(zhat)
-    
-    def act(self, state, goal):
-        q_value = self.forward(state, goal)
-        action  = torch.argmax(q_value)
-        return action

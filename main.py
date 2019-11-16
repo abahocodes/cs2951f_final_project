@@ -18,12 +18,18 @@ from replay_buffer import ReplayBuffer
 from transition import Transition
 from util import relabel_future_instructions
 
-MAX_EPISODES = 50
-REPLAY_BUFFER_SIZE = 100
-BATCH_SIZE = 30
+import logging
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
+REPLAY_BUFFER_SIZE = 2e6
+BATCH_SIZE = 32
+EPOCH = 50
+EPISODES = 50
+STEPS = 100
+UPDATE_STEPS = 100
 
 class DoubleDQN:
-    def __init__(self, env, tau=0.01, gamma=0.99, epsilon=0.9):
+    def __init__(self, env, tau=0.01, gamma=0.9, epsilon=1.0):
         self.env = env
         self.tau = tau
         self.gamma = gamma
@@ -81,71 +87,74 @@ class DoubleDQN:
         return loss
 
     def update(self, replay_buffer, batch_size):
-        batch = replay_buffer.sample(batch_size) # 4
-        loss = self.compute_loss(batch)
+        for _ in range(UPDATE_STEPS):
+            batch = replay_buffer.sample(batch_size)
+            loss = self.compute_loss(batch)
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-        # target network update
+    def update_target_net(self): # TODO: Check this function
+         # target network update
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(self.tau * param + (1 - self.tau) * target_param)
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default="train", help="[test|train]")
 args = parser.parse_args()
 
 def train(env, agent):
-    episode_rewards = []
     replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
-    for episode in range(MAX_EPISODES):
-        state = env.reset()
-        goal, goal_program = env.sample_goal()
-        print("running episode: ", episode)
-        print("episode goal: ", goal)
-        env.set_goal(goal, goal_program)
-        episode_reward = 0
-        max_steps = replay_buffer.max_size()
-        trajectory = []
+    for cycle in range(EPOCH):
+        epoch_reward = 0.0
+        agent.update_target_net() # target network update
+        for episode in range(EPISODES):
+            state = env.reset()
+            goal, goal_program = env.sample_goal()
+            env.set_goal(goal, goal_program)
+            episode_reward = 0
+            trajectory = []
 
-        for step in range(max_steps):
-            action = agent.get_action(state, goal)
-            #print("choosing action: ", action)
-            next_state, reward, done, _ = env.step(action, record_achieved_goal=True)
-            achieved_goals = env.get_achieved_goals()
-            #print("num achieved goals: ", len(achieved_goals))
-            transition = Transition(state, action, goal, reward, next_state, achieved_goals, done)
-            trajectory.append(transition)
-            episode_reward += reward
+            for step in range(STEPS):
+                action = agent.get_action(state, goal)
+                next_state, reward, done, _ = env.step(action, record_achieved_goal=True)
+                achieved_goals = env.get_achieved_goals()
+                transition = Transition(state, action, goal, reward, next_state, achieved_goals, done)
+                trajectory.append(transition)
+                episode_reward += reward
 
-            # if len(agent.replay_buffer) > BATCH_SIZE:
-            #     agent.update(BATCH_SIZE)   
+                if done:
+                    break
 
-            if done or step == max_steps-1:
-                episode_rewards.append(episode_reward)
-                print("Episode " + str(episode) + ": reward " + str(episode_reward))
-                break
+                state = next_state
+            
+            for step in range(len(trajectory)):
+                replay_buffer.add(trajectory[step])
+                for goal_prime in trajectory[step].satisfied_goals_t:
+                    transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, 1.0, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
+                    replay_buffer.add(transition)
+                deltas = relabel_future_instructions(trajectory, step, 4, 0.9)
+                for delta in deltas:
+                    goal_prime, reward_prime = delta
+                    transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
+                    replay_buffer.add(transition)    
 
-            state = next_state
-        
-        for step in range(len(trajectory)): # T == length of trajectory?
-            replay_buffer.add(trajectory[step])
-            #print("just finished adding all transitions")
-            for goal_prime in trajectory[step].satisfied_goals_t:
-                transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, 1, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
-                replay_buffer.add(transition)
-            #print("just finished adding all achieved goals")
-            deltas = relabel_future_instructions(trajectory, step, 4, 0.9)
-            for delta in deltas:
-                goal_prime, reward_prime = delta
-                transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
-                replay_buffer.add(transition)    
-            #print("just finished adding all deltas")
+            epoch_reward += episode_reward
 
-        agent.update(replay_buffer, BATCH_SIZE)   
-        print("completed episode: ", episode)
-    return episode_rewards
+            logging.error("[Episode] " + str(episode) + ": reward " + str(episode_reward))
+
+            agent.update(replay_buffer, BATCH_SIZE)   
+
+        logging.error("[Epoch] " + str(cycle) + ": average reward " + str(epoch_reward/STEPS))
+
+        if cycle > 9:
+            agent.epsilon *= 0.993
+            if agent.epsilon < 0.1:
+                agent.epsilon = 0.1
+
+        torch.save(agent, 'agent.npy')
 
 def test(env, agent):
     pass
