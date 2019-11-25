@@ -19,6 +19,7 @@ from transition import Transition
 from util import relabel_future_instructions
 
 import logging
+logging._warn_preinit_stderr = 0
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.ERROR)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -31,13 +32,13 @@ STEPS = 100
 UPDATE_STEPS = 100
 
 class DoubleDQN:
-    def __init__(self, env, tau=0.01, gamma=0.9, epsilon=1.0):
+    def __init__(self, env, tau=0.05, gamma=0.9, epsilon=1.0):
         self.env = env
         self.tau = tau
         self.gamma = gamma
         self.epsilon = epsilon
-        self.embedding_size = 50
-        self.hidden_size = 50
+        self.embedding_size = 30
+        self.hidden_size = 30
         self.obs_shape = self.env.get_obs().shape
         self.action_shape = 40 // 5
         self.model = DQN(self.obs_shape, self.action_shape).to(DEVICE)
@@ -52,7 +53,7 @@ class DoubleDQN:
     def get_action(self, state, goal):
         assert len(state.shape) == 2 # This function should not be called during update
 
-        if(np.random.randn() < self.epsilon):
+        if(np.random.rand() > self.epsilon):
             q_values = self.model.forward(state, goal)
             idx = torch.argmax(q_values).detach()
         else:
@@ -62,8 +63,8 @@ class DoubleDQN:
         direction_selection = idx % 8
 
         return int(obj_selection), int(direction_selection)
+
         
-    
     def compute_loss(self, batch):     
         states, actions, goals, rewards, next_states, satisfied_goals, dones = batch
 
@@ -100,7 +101,6 @@ class DoubleDQN:
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(self.tau * param + (1 - self.tau) * target_param)
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default="train", help="[test|train]")
 args = parser.parse_args()
@@ -125,6 +125,9 @@ def train(env, agent):
                 trajectory.append(transition)
                 episode_reward += reward
 
+                if reward == 1.0:
+                    goal, _ = env.sample_goal()
+
                 if done:
                     break
 
@@ -147,21 +150,57 @@ def train(env, agent):
 
             agent.update(replay_buffer, BATCH_SIZE)   
 
-        logging.error("[Epoch] " + str(cycle) + ": average reward " + str(epoch_reward/STEPS))
+        logging.error("[Epoch] " + str(cycle) + ": total reward " + str(epoch_reward))
 
-        if cycle > 9:
-            agent.epsilon *= 0.993
-            if agent.epsilon < 0.1:
-                agent.epsilon = 0.1
+        agent.epsilon *= 0.993
+        if agent.epsilon < 0.1:
+            agent.epsilon = 0.1
 
         torch.save(agent, 'agent.npy')
 
 def test(env, agent):
-    pass
+    agent = torch.load('agent.npy', map_location=torch.device('cpu'))
+    agent.epsilon = 0.0
+
+    av_agent_steps = []
+    av_random_steps = []
+
+    with torch.no_grad():
+        for _ in range(100):
+            state = env.reset()
+            number_of_steps_taken = 0
+            goal, goal_program = env.sample_goal()
+            env.set_goal(goal, goal_program)
+            while True:
+                action = agent.get_action(state, goal)
+                next_state, reward, done, _ = env.step(action, record_achieved_goal=False)
+                number_of_steps_taken += 1
+                if reward == 1.0 or done:
+                    break
+                state = next_state
+            av_agent_steps.append(number_of_steps_taken)
+
+        for _ in range(100):
+            state = env.reset()
+            number_of_steps_taken = 0
+            goal, goal_program = env.sample_goal()
+            env.set_goal(goal, goal_program)
+            while True:
+                action = env.action_space.sample()
+                obj_selection = action // 8
+                direction_selection = action % 8
+                next_state, reward, done, _ = env.step((obj_selection, direction_selection), record_achieved_goal=False)
+                number_of_steps_taken += 1
+                if reward == 1.0 or done:
+                    break
+                state = next_state
+            av_random_steps.append(number_of_steps_taken)
+
+    print("Agent Average Steps : " + str(sum(av_agent_steps)/len(av_agent_steps)))
+    print("Random Average Steps: " + str(sum(av_random_steps)/len(av_random_steps)))
 
 def main():
-    env = ClevrEnv(action_type="perfect", obs_type='order_invariant', direct_obs=True)
-    # replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
+    env = ClevrEnv(action_type="perfect", obs_type='order_invariant', direct_obs=True, use_subset_instruction=True)
     agent = DoubleDQN(env)
 
     if args.mode == "train":

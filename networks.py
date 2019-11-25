@@ -71,8 +71,8 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.obs_shape = obs_shape
         self.action_shape = action_shape
-        self.embedding_size = 50
-        self.hidden_size = 50
+        self.embedding_size = 30
+        self.hidden_size = 30
         self.f1 = f1(self.obs_shape[1] * 2, self.hidden_size).to(DEVICE)
         self.encoder = Encoder(self.embedding_size, self.hidden_size).to(DEVICE)
         f3_input_shape = obs_shape[1] + self.hidden_size + 5

@@ -27,7 +27,7 @@ class ReplayBuffer:
             self._storage.append(transition)
         else:
             self._storage[self._next_idx] = transition
-        self._next_idx = (self._next_idx + 1) % self._maxsize
+        self._next_idx = int((self._next_idx + 1) % self._maxsize)
 
     def _encode_sample(self, batch_size):
         state_t, actions, goals, rewards, state_tp1, satisfied_goals, dones = [], [], [], [], [], [], []
