@@ -4,6 +4,7 @@ import random
 import numpy as np
 from scipy.special import softmax
 from util import *
+from time import time
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class OneHot(nn.Module):
@@ -105,6 +106,10 @@ class DQN(nn.Module):
         ).to(DEVICE)
         
     def forward(self, obs, g):
+        start = time()
         g = self.encoder(g)
+        print("encoder time: ", time() - start)
+        start = time()
         zhat = get_state_based_representation(obs, g, self.f1)
+        print("get state representation time: ", time() - start)
         return self.f3(zhat)

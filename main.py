@@ -17,6 +17,7 @@ from networks import DQN, Encoder, OneHot
 from replay_buffer import ReplayBuffer
 from transition import Transition
 from util import relabel_future_instructions
+import time
 
 import logging
 logging._warn_preinit_stderr = 0
@@ -125,6 +126,7 @@ def train(env, agent):
             episode_reward = 0
             trajectory = []
 
+            start = time.time()
             for step in range(STEPS):
                 action = agent.get_action(state, goal)
                 next_state, reward, done, _ = env.step(action, record_achieved_goal=True)
@@ -140,6 +142,9 @@ def train(env, agent):
                     break
 
                 state = next_state
+            end = time.time()
+            print("environment interaction secs: ", end - start)
+            start = end
             
             for step in range(len(trajectory)):
                 replay_buffer.add(trajectory[step])
@@ -152,11 +157,19 @@ def train(env, agent):
                     transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
                     replay_buffer.add(transition)    
 
+            end = time.time()
+            print("HIR secs: ", end - start)
+            start = end
             epoch_reward += episode_reward
 
             logging.error("[Episode] " + str(episode) + ": reward " + str(episode_reward))
 
             agent.update(replay_buffer, BATCH_SIZE)   
+
+            end = time.time()
+            print("update model secs: ", end - start)
+            start = end
+
 
         logging.error("[Epoch] " + str(cycle) + ": total reward " + str(epoch_reward))
 
@@ -174,7 +187,7 @@ def test(env, agent):
         agent = torch.load('agent-onehot-bin-'+str(args.bins)+'.npy', map_location=DEVICE)
     else:
         agent = torch.load('agent-noncomp.npy', map_location=DEVICE)
-        
+
     agent.epsilon = 0.0
 
     av_agent_steps = []
