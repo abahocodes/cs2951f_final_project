@@ -13,7 +13,7 @@ import sys, os.path
 sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'))
 sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..','clevr_robot_env'))
 from clevr_robot_env import ClevrEnv
-from networks import DQN, Encoder
+from networks import DQN, Encoder, OneHot
 from replay_buffer import ReplayBuffer
 from transition import Transition
 from util import relabel_future_instructions
@@ -21,6 +21,12 @@ from util import relabel_future_instructions
 import logging
 logging._warn_preinit_stderr = 0
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.ERROR)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--mode", type=str, default="train", help="[test|train]")
+parser.add_argument("--encoding", type=str, default="noncomp", help="[noncomp|onehot]")
+parser.add_argument("--bins", type=int, default=1, help="bins in onehot encoding, eg: [1,4,10,20]")
+args = parser.parse_args()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -41,8 +47,13 @@ class DoubleDQN:
         self.hidden_size = 30
         self.obs_shape = self.env.get_obs().shape
         self.action_shape = 40 // 5
-        self.model = DQN(self.obs_shape, self.action_shape).to(DEVICE)
-        self.target_model = DQN(self.obs_shape, self.action_shape).to(DEVICE)
+        if args.encoding == "onehot":
+            self.encoder = OneHot(args.bins, self.env.all_questions + self.env.held_out_questions, self.hidden_size)
+        else:
+            self.encoder = Encoder(self.embedding_size, self.hidden_size).to(DEVICE)
+
+        self.model = DQN(self.obs_shape, self.action_shape, self.encoder).to(DEVICE)
+        self.target_model = DQN(self.obs_shape, self.action_shape, self.encoder).to(DEVICE)
 
         # hard copy model parameters to target model parameters
         for target_param, param in zip(self.model.parameters(), self.target_model.parameters()):
@@ -71,12 +82,12 @@ class DoubleDQN:
         rewards = torch.FloatTensor(rewards).to(DEVICE)
         dones = torch.FloatTensor(dones).to(DEVICE)
 
-        curr_Q = self.model.forward(states, goals) 
+        curr_Q = self.model(states, goals) 
 
         curr_Q_prev_actions = [curr_Q[batch, actions[batch][0], actions[batch][1]] for batch in range(len(states))] # TODO: Use pytorch gather
         curr_Q_prev_actions = torch.stack(curr_Q_prev_actions)
 
-        next_Q = self.target_model.forward(next_states, goals) 
+        next_Q = self.target_model(next_states, goals) 
         
         next_Q_max_actions = torch.max(next_Q, -1).values
         next_Q_max_actions = torch.max(next_Q_max_actions, -1).values
@@ -101,9 +112,6 @@ class DoubleDQN:
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(self.tau * param + (1 - self.tau) * target_param)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--mode", type=str, default="train", help="[test|train]")
-args = parser.parse_args()
 
 def train(env, agent):
     replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
@@ -156,10 +164,17 @@ def train(env, agent):
         if agent.epsilon < 0.1:
             agent.epsilon = 0.1
 
-        torch.save(agent, 'agent.npy')
+        if args.encoding == "onehot":
+            torch.save(agent, 'agent-onehot-bin-'+str(args.bins)+'.npy')
+        else:
+            torch.save(agent, 'agent-noncomp.npy')
 
 def test(env, agent):
-    agent = torch.load('agent.npy', map_location=torch.device('cpu'))
+    if args.encoding == "onehot":
+        agent = torch.load('agent-onehot-bin-'+str(args.bins)+'.npy', map_location=DEVICE)
+    else:
+        agent = torch.load('agent-noncomp.npy', map_location=DEVICE)
+        
     agent.epsilon = 0.0
 
     av_agent_steps = []

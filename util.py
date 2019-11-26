@@ -7,14 +7,13 @@ from random import randint
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def get_state_based_representation(observation, instruction, f1_model, f2):
+def get_state_based_representation(observation, ghat, f1_model):
 
     if len(observation.shape) == 2:
         observation = np.expand_dims(observation, 0)
 
     observation = torch.Tensor(observation).to(DEVICE)
     Z_matrix = get_Z_matrix(f1_model, observation)
-    ghat = f2(instruction)
 
     # Check for batch
     if len(ghat.shape) == 1:
