@@ -49,7 +49,7 @@ class DoubleDQN:
         self.obs_shape = self.env.get_obs().shape
         self.action_shape = 40 // 5
         if args.encoding == "onehot":
-            self.encoder = OneHot(args.bins, self.env.all_questions + self.env.held_out_questions, self.hidden_size)
+            self.encoder = OneHot(args.bins, self.env.all_questions + self.env.held_out_questions, self.hidden_size).to(DEVICE)
         else:
             self.encoder = Encoder(self.embedding_size, self.hidden_size).to(DEVICE)
 

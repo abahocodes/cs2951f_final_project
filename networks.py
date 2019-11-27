@@ -22,9 +22,9 @@ class OneHot(nn.Module):
     def forward(self, q):
         if isinstance(q,np.ndarray):
             indexes = [self.instruction_to_num[x] * random.randint(0, self.bins - 1) for x in q] 
-            one_hot = nn.functional.one_hot(torch.tensor(indexes), self.one_hot_sz)
+            one_hot = nn.functional.one_hot(torch.tensor(indexes), self.one_hot_sz).to(DEVICE)
         else: 
-            one_hot = nn.functional.one_hot(torch.tensor(self.instruction_to_num[q] * random.randint(0, self.bins - 1)), self.one_hot_sz)
+            one_hot = nn.functional.one_hot(torch.tensor(self.instruction_to_num[q] * random.randint(0, self.bins - 1)), self.one_hot_sz).to(DEVICE)
         return self.layers(one_hot.float())
 
 
