@@ -124,6 +124,8 @@ def train(env, agent):
             goal, goal_program = env.sample_goal()
             env.set_goal(goal, goal_program)
             episode_reward = 0
+            no_of_achieved_goals = 0
+            current_instruction_steps = 0
             trajectory = []
 
             start = time.time()
@@ -137,8 +139,14 @@ def train(env, agent):
 
                 if reward == 1.0:
                     goal, _ = env.sample_goal()
+                    env.set_goal(goal, goal_program)
+                    no_of_achieved_goals += 1
+                    current_instruction_steps = 0
 
                 if done:
+                    break
+
+                if current_instruction_steps == 10:
                     break
 
                 state = next_state
@@ -162,7 +170,7 @@ def train(env, agent):
             start = end
             epoch_reward += episode_reward
 
-            logging.error("[Episode] " + str(episode) + ": reward " + str(episode_reward))
+            logging.error("[Episode] " + str(episode) + ": reward " + str(episode_reward) + " no of achieved goals: " + str(no_of_achieved_goals))
 
             agent.update(replay_buffer, BATCH_SIZE)   
 
