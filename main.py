@@ -23,13 +23,17 @@ import logging
 logging._warn_preinit_stderr = 0
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.ERROR)
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default="train", help="[test|train]")
 parser.add_argument("--encoding", type=str, default="noncomp", help="[noncomp|onehot]")
 parser.add_argument("--bins", type=int, default=1, help="bins in onehot encoding, eg: [1,4,10,20]")
 args = parser.parse_args()
 
+MODEL_FILE = 'agent-onehot-bin-'+str(args.bins)+'.npy'if args.encoding == "onehot" else 'agent-noncomp.npy'
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("using device: ", DEVICE)
 
 REPLAY_BUFFER_SIZE = 2e6
 BATCH_SIZE = 32
@@ -39,11 +43,10 @@ STEPS = 100
 UPDATE_STEPS = 100
 
 class DoubleDQN:
-    def __init__(self, env, tau=0.05, gamma=0.9, epsilon=1.0):
+    def __init__(self, env, tau=0.1, gamma=0.9, epsilon=1.0):
         self.env = env
         self.tau = tau
         self.gamma = gamma
-        self.epsilon = epsilon
         self.embedding_size = 30
         self.hidden_size = 30
         self.obs_shape = self.env.get_obs().shape
@@ -55,12 +58,20 @@ class DoubleDQN:
 
         self.model = DQN(self.obs_shape, self.action_shape, self.encoder).to(DEVICE)
         self.target_model = DQN(self.obs_shape, self.action_shape, self.encoder).to(DEVICE)
+        self.optimizer = torch.optim.Adam(self.model.parameters())
+        self.epsilon = epsilon
+        if os.path.exists(MODEL_FILE):
+            checkpoint = torch.load(MODEL_FILE)
+            self.encoder.load_state_dict(checkpoint['encoder_state_dict'])
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.epsilon = checkpoint['epsilon']
 
         # hard copy model parameters to target model parameters
         for target_param, param in zip(self.model.parameters(), self.target_model.parameters()):
             target_param.data.copy_(param)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters())
 
     def get_action(self, state, goal):
         assert len(state.shape) == 2 # This function should not be called during update
@@ -68,11 +79,12 @@ class DoubleDQN:
         if(np.random.rand() > self.epsilon):
             q_values = self.model.forward(state, goal)
             idx = torch.argmax(q_values).detach()
+            obj_selection = idx // 8
+            direction_selection = idx % 8
         else:
-            idx = self.env.action_space.sample()
-
-        obj_selection = idx // 8
-        direction_selection = idx % 8
+            action = self.env.sample_random_action()
+            obj_selection = action[0]
+            direction_selection = action[1]
 
         return int(obj_selection), int(direction_selection)
 
@@ -113,6 +125,15 @@ class DoubleDQN:
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(self.tau * param + (1 - self.tau) * target_param)
 
+    def save_model(self):
+        torch.save({
+            'model_state_dict': self.model.state_dict(), 
+            'target_model_state_dict': self.target_model.state_dict(), 
+            'encoder_state_dict': self.encoder.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon
+            }, MODEL_FILE)
+
 
 def train(env, agent):
     replay_buffer = ReplayBuffer(REPLAY_BUFFER_SIZE)
@@ -138,7 +159,7 @@ def train(env, agent):
                 episode_reward += reward
 
                 if reward == 1.0:
-                    goal, _ = env.sample_goal()
+                    goal, goal_program = env.sample_goal()
                     env.set_goal(goal, goal_program)
                     no_of_achieved_goals += 1
                     current_instruction_steps = 0
@@ -150,9 +171,9 @@ def train(env, agent):
                     break
 
                 state = next_state
-            end = time.time()
-            print("environment interaction secs: ", end - start)
-            start = end
+            # end = time.time()
+            # print("environment interaction secs: ", end - start)
+            # start = end
             
             for step in range(len(trajectory)):
                 replay_buffer.add(trajectory[step])
@@ -165,37 +186,29 @@ def train(env, agent):
                     transition = Transition(trajectory[step].current_state, trajectory[step].action, goal_prime, reward_prime, trajectory[step].next_state, trajectory[step].satisfied_goals_t, trajectory[step].done)
                     replay_buffer.add(transition)    
 
-            end = time.time()
-            print("HIR secs: ", end - start)
-            start = end
+            # end = time.time()
+            # print("HIR secs: ", end - start)
+            # start = end
             epoch_reward += episode_reward
 
             logging.error("[Episode] " + str(episode) + ": reward " + str(episode_reward) + " no of achieved goals: " + str(no_of_achieved_goals))
 
             agent.update(replay_buffer, BATCH_SIZE)   
 
-            end = time.time()
-            print("update model secs: ", end - start)
-            start = end
+            # end = time.time()
+            # print("update model secs: ", end - start)
+            # start = end
 
 
         logging.error("[Epoch] " + str(cycle) + ": total reward " + str(epoch_reward))
+        agent.save_model()
 
         agent.epsilon *= 0.993
         if agent.epsilon < 0.1:
             agent.epsilon = 0.1
 
-        if args.encoding == "onehot":
-            torch.save(agent, 'agent-onehot-bin-'+str(args.bins)+'.npy')
-        else:
-            torch.save(agent, 'agent-noncomp.npy')
 
 def test(env, agent):
-    if args.encoding == "onehot":
-        agent = torch.load('agent-onehot-bin-'+str(args.bins)+'.npy', map_location=DEVICE)
-    else:
-        agent = torch.load('agent-noncomp.npy', map_location=DEVICE)
-
     agent.epsilon = 0.0
 
     av_agent_steps = []
@@ -238,7 +251,6 @@ def test(env, agent):
 def main():
     env = ClevrEnv(action_type="perfect", obs_type='order_invariant', direct_obs=True, use_subset_instruction=True)
     agent = DoubleDQN(env)
-
     if args.mode == "train":
         train(env, agent)
     else:
