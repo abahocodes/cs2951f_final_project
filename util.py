@@ -1,9 +1,11 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from transition import Transition
 from replay_buffer import ReplayBuffer
 import networks
 from random import randint
+import time
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -13,57 +15,33 @@ def get_state_based_representation(observation, ghat, f1_model):
         observation = np.expand_dims(observation, 0)
 
     observation = torch.Tensor(observation).to(DEVICE)
+
+    start = time.time()
     Z_matrix = get_Z_matrix(f1_model, observation)
 
     # Check for batch
     if len(ghat.shape) == 1:
         ghat = ghat.unsqueeze(0)
 
-    w_matrix = get_w_matrix(Z_matrix, ghat)
-    p_matrix = get_p_matrix(w_matrix)
+    p_matrix = get_p_matrix(Z_matrix, ghat)
     zhat = get_zhat_matrix(observation, ghat, Z_matrix, p_matrix)
     return zhat
 
 def get_Z_matrix(f1_model, observation):
-    Z_matrix = [[[0.0 for _ in range(5)] for _ in range(5)] for batch in observation]
-
+    data = []
     for i in range(observation.shape[0]):
         for j in range(observation.shape[1]):
             for k in range(observation.shape[1]):
-                pair = torch.cat((observation[i, j, :], observation[i, k, :]), 0)
-                pair = pair.to(DEVICE)
-                value = f1_model(pair)
-                Z_matrix[i][j][k] = value
+                data.append(torch.cat((observation[i, j, :], observation[i, k, :]), 0).to(DEVICE))
+    output = f1_model(torch.stack(data))
+    return output.view(observation.shape[0], observation.shape[1], observation.shape[1], -1)
 
-    return Z_matrix
-
-def get_w_matrix(Z_matrix, ghat):
-    w_matrix = [[[0.0 for _ in range(5)] for _ in range(5)] for batch in Z_matrix]
-    for i in range(len(w_matrix)):
-        for j in range(len(w_matrix[0])):
-            for k in range(len(w_matrix[0][0])):
-                w_matrix[i][j][k] = Z_matrix[i][j][k] @ ghat[i]
-    return w_matrix
-
-def softmax(w_matrix):
-    max_val = max([max(w_matrix[i]) for i in range(len(w_matrix))])
-    denom = 0
-    new_matrix = [[1 for _ in range(len(w_matrix))] for _ in range(len(w_matrix))]
-
-    for i, _ in enumerate(w_matrix):
-        for j, _ in enumerate(w_matrix):
-            denom += torch.exp(w_matrix[i][j] - max_val)
-
-    for i, _ in enumerate(w_matrix):
-        for j, _ in enumerate(w_matrix):
-            new_matrix[i][j] = torch.exp(w_matrix[i][j] - max_val) / denom
-
-    return new_matrix
-    
-
-def get_p_matrix(w_matrix):
-    new_matrix = [softmax(batch) for batch in w_matrix]
-    return new_matrix
+def get_p_matrix(Z_matrix, ghat):
+    batch_size = len(Z_matrix)
+    dim_1 = len(Z_matrix[0])
+    w_matrix = torch.stack([torch.dot(z_vec, ghat[idx]) for idx, batch in enumerate(Z_matrix) for row in batch for z_vec in row])
+    p_matrix = F.softmax(w_matrix.view(batch_size, -1), dim=1)
+    return p_matrix.view(-1, dim_1, dim_1)
 
 def get_zhat_matrix(observation, ghat, Z_matrix, p_matrix):
     z_vector = [[[0.0 for _ in range(5)] for _ in range(5)] for batch in observation]
