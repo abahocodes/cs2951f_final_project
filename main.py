@@ -169,7 +169,8 @@ def train(env, agent):
 
                 if current_instruction_steps == 10:
                     break
-
+                
+                current_instruction_steps += 1
                 state = next_state
             # end = time.time()
             # print("environment interaction secs: ", end - start)
