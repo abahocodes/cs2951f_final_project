@@ -37,10 +37,10 @@ print("using device: ", DEVICE)
 
 REPLAY_BUFFER_SIZE = 2e6
 BATCH_SIZE = 32
-EPOCH = 50
-EPISODES = 50
+EPOCH = 200
+EPISODES = 100
 STEPS = 100
-UPDATE_STEPS = 100
+UPDATE_STEPS = 10
 
 class DoubleDQN:
     def __init__(self, env, tau=0.1, gamma=0.9, epsilon=1.0):
@@ -204,7 +204,7 @@ def train(env, agent):
         logging.error("[Epoch] " + str(cycle) + ": total reward " + str(epoch_reward))
         agent.save_model()
 
-        agent.epsilon *= 0.993
+        agent.epsilon *= 0.96
         if agent.epsilon < 0.1:
             agent.epsilon = 0.1
 
